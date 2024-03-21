@@ -1,0 +1,41 @@
+name: Model serving
+description: Create kserve instance
+implementation:
+  container:
+    image: python:3.8.10
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'kserve==0.8.0' 'kubernetes==12.0.1' 'protobuf==3.19.4' || PIP_DISABLE_PIP_VERSION_CHECK=1
+      python3 -m pip install --quiet --no-warn-script-location 'kserve==0.8.0' 'kubernetes==12.0.1'
+      'protobuf==3.19.4' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - "def model_serving():\n    \"\"\"\n    Create kserve instance\n    \"\"\"\n\
+      \    from kubernetes import client \n    from kserve import KServeClient\n \
+      \   from kserve import constants\n    from kserve import utils\n    from kserve\
+      \ import V1beta1InferenceService\n    from kserve import V1beta1InferenceServiceSpec\n\
+      \    from kserve import V1beta1PredictorSpec\n    from kserve import V1beta1TFServingSpec\n\
+      \    from datetime import datetime\n\n    namespace = utils.get_default_target_namespace()\n\
+      \n    now = datetime.now()\n    v = now.strftime(\"%Y-%m-%d--%H-%M-%S\")\n\n\
+      \    name='digits-recognizer-{}'.format(v)\n    kserve_version='v1beta1'\n \
+      \   api_version = constants.KSERVE_GROUP + '/' + kserve_version\n\n    isvc\
+      \ = V1beta1InferenceService(api_version=api_version,\n                     \
+      \              kind=constants.KSERVE_KIND,\n                               \
+      \    metadata=client.V1ObjectMeta(\n                                       name=name,\
+      \ namespace=namespace, annotations={'sidecar.istio.io/inject':'false'}),\n \
+      \                                  spec=V1beta1InferenceServiceSpec(\n     \
+      \                              predictor=V1beta1PredictorSpec(\n           \
+      \                            service_account_name=\"sa-minio-kserve\",\n   \
+      \                                    tensorflow=(V1beta1TFServingSpec(\n   \
+      \                                        storage_uri=\"s3://mlpipeline/models/detect-digits/\"\
+      ))))\n    )\n\n    KServe = KServeClient()\n    KServe.create(isvc)\n\nimport\
+      \ argparse\n_parser = argparse.ArgumentParser(prog='Model serving', description='Create\
+      \ kserve instance')\n_parsed_args = vars(_parser.parse_args())\n\n_outputs =\
+      \ model_serving(**_parsed_args)\n"
+    args: []

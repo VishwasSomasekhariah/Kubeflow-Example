@@ -1,0 +1,120 @@
+name: Get data batch
+description: Function to get dataset and load it to minio bucket
+outputs:
+- {name: datapoints_training, type: Float}
+- {name: datapoints_test, type: Float}
+- {name: dataset_version, type: String}
+implementation:
+  container:
+    image: python:3.8.10
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'tensorflow==2.5.3' 'minio==6.0.2' 'numpy==1.19.5' || PIP_DISABLE_PIP_VERSION_CHECK=1
+      python3 -m pip install --quiet --no-warn-script-location 'tensorflow==2.5.3'
+      'minio==6.0.2' 'numpy==1.19.5' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - |
+      def get_data_batch():
+          """
+          Function to get dataset and load it to minio bucket
+          """
+          print("getting data")
+          from tensorflow import keras
+          from minio import Minio
+          import numpy as np
+          import json
+
+          minio_client = Minio(
+              "10.43.114.82:9000",
+              access_key="minio",
+              secret_key="minio123",
+              secure=False
+          )
+          minio_bucket = "mlpipeline"
+
+          minio_client.fget_object(minio_bucket,"mnist.npz","/tmp/mnist.npz")
+
+          def load_data():
+              with np.load("/tmp/mnist.npz", allow_pickle=True) as f:
+                  x_train, y_train = f["x_train"], f["y_train"]
+                  x_test, y_test = f["x_test"], f["y_test"]
+
+              return (x_train, y_train), (x_test, y_test)
+
+          # Get MNIST data directly from library
+          (x_train, y_train), (x_test, y_test) = load_data()
+
+          # save to numpy file, store in Minio
+          np.save("/tmp/x_train.npy",x_train)
+          minio_client.fput_object(minio_bucket,"x_train","/tmp/x_train.npy")
+
+          np.save("/tmp/y_train.npy",y_train)
+          minio_client.fput_object(minio_bucket,"y_train","/tmp/y_train.npy")
+
+          np.save("/tmp/x_test.npy",x_test)
+          minio_client.fput_object(minio_bucket,"x_test","/tmp/x_test.npy")
+
+          np.save("/tmp/y_test.npy",y_test)
+          minio_client.fput_object(minio_bucket,"y_test","/tmp/y_test.npy")
+
+          dataset_version = "1.0"
+
+          print(f"x_train shape: {x_train.shape}")
+          print(f"y_train shape: {y_train.shape}")
+
+          print(f"x_test shape: {x_test.shape}")
+          print(f"y_test shape: {y_test.shape}")
+
+          from collections import namedtuple
+          divmod_output = namedtuple('Outputs', ['datapoints_training', 'datapoints_test', 'dataset_version'])
+          return [float(x_train.shape[0]),float(x_test.shape[0]),dataset_version]
+
+      def _serialize_float(float_value: float) -> str:
+          if isinstance(float_value, str):
+              return float_value
+          if not isinstance(float_value, (float, int)):
+              raise TypeError('Value "{}" has type "{}" instead of float.'.format(
+                  str(float_value), str(type(float_value))))
+          return str(float_value)
+
+      def _serialize_str(str_value: str) -> str:
+          if not isinstance(str_value, str):
+              raise TypeError('Value "{}" has type "{}" instead of str.'.format(
+                  str(str_value), str(type(str_value))))
+          return str_value
+
+      import argparse
+      _parser = argparse.ArgumentParser(prog='Get data batch', description='Function to get dataset and load it to minio bucket')
+      _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=3)
+      _parsed_args = vars(_parser.parse_args())
+      _output_files = _parsed_args.pop("_output_paths", [])
+
+      _outputs = get_data_batch(**_parsed_args)
+
+      _output_serializers = [
+          _serialize_float,
+          _serialize_float,
+          _serialize_str,
+
+      ]
+
+      import os
+      for idx, output_file in enumerate(_output_files):
+          try:
+              os.makedirs(os.path.dirname(output_file))
+          except OSError:
+              pass
+          with open(output_file, 'w') as f:
+              f.write(_output_serializers[idx](_outputs[idx]))
+    args:
+    - '----output-paths'
+    - {outputPath: datapoints_training}
+    - {outputPath: datapoints_test}
+    - {outputPath: dataset_version}

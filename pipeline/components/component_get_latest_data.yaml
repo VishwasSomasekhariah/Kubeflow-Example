@@ -1,0 +1,25 @@
+name: Get latest data
+description: Dummy functions for showcasing
+implementation:
+  container:
+    image: python:3.8.10
+    command:
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - |
+      def get_latest_data():
+          """
+          Dummy functions for showcasing
+          """
+          print("Adding latest data")
+
+      import argparse
+      _parser = argparse.ArgumentParser(prog='Get latest data', description='Dummy functions for showcasing')
+      _parsed_args = vars(_parser.parse_args())
+
+      _outputs = get_latest_data(**_parsed_args)
+    args: []
